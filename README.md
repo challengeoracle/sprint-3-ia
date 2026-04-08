@@ -90,10 +90,10 @@ Fluxo completo quando o gestor aciona a funcionalidade:
 │                 Oracle APEX                         │
 │                                                     │
 │  Painel do Gestor                                   │
-│  ┌─────────────────────────────────────────────┐   │
-│  │ Formulário: unidade + especialidade + dias  │   │
-│  │ Gráfico: histórico + previsão + alertas     │   │
-│  └─────────────────────────────────────────────┘   │
+│  ┌─────────────────────────────────────────────┐    │
+│  │ Formulário: unidade + especialidade + dias  │    │
+│  │ Gráfico: histórico + previsão + alertas     │    │
+│  └─────────────────────────────────────────────┘    │
 └──────────────────────┬──────────────────────────────┘
                        │
             ORDS — HTTP/JSON Request
@@ -167,17 +167,18 @@ import numpy as np
 def gerar_dados_sinteticos(dias=180, especialidade="Cardiologia", unidade_id=1):
     datas = pd.date_range(start="2024-10-01", periods=dias, freq="D")
     np.random.seed(42)
-    
+
     base = 20
-    sazonalidade_semana = np.where(datas.weekday < 5, 1.2, 0.4)  # mais em dias úteis
+    sazonalidade_semana = np.where(datas.weekday < 5, 1.2, 0.4)
     sazonalidade_mes = 1 + 0.15 * np.sin(2 * np.pi * datas.dayofyear / 365)
     ruido = np.random.normal(0, 2, dias)
-    
-    y = (base * sazonalidade_semana * sazonalidade_mes + ruido).clip(0).astype(int)
-    
+
+    valores = np.array(base * sazonalidade_semana * sazonalidade_mes + ruido)
+    valores = valores.clip(min=0).round().astype(int)
+
     return pd.DataFrame({
         "data_agendamento": datas,
-        "y": y,
+        "y": valores,
         "especialidade": especialidade,
         "unidade_id": unidade_id,
         "status": "Realizado"
@@ -198,6 +199,7 @@ def gerar_dados_sinteticos(dias=180, especialidade="Cardiologia", unidade_id=1):
 | Prophet | 1.1.x | Modelo de séries temporais |
 | scikit-learn | 1.3.x | Pré-processamento e métricas |
 | pandas / numpy | — | Manipulação dos dados |
+| Flask | 3.x | Servidor REST local para o endpoint do modelo |
 
 ---
 
@@ -205,19 +207,18 @@ def gerar_dados_sinteticos(dias=180, especialidade="Cardiologia", unidade_id=1):
 
 ```
 sprint-3-ia/
-├── README.md                        ← este arquivo
+├── README.md                               ← este arquivo
+├── teste.py                                ← teste rápido do endpoint
 ├── docs/
 │   └── Medix_Arquitetura_IA_Sprint3.docx  ← documento completo de arquitetura
-├── src/
-│   ├── data/
-│   │   └── gerar_dados_sinteticos.py      ← script de dados para o MVP
-│   ├── model/
-│   │   ├── treinar_modelo.py              ← treinamento do Prophet
-│   │   └── endpoint_previsao.py           ← endpoint REST (Flask/FastAPI)
-│   └── apex/
-│       └── sp_exportar_serie_temporal.sql ← stored procedure Oracle
-└── assets/
-    └── diagrama_arquitetura.png           ← imagem do diagrama
+└── src/
+    ├── data/
+    │   └── gerar_dados_sinteticos.py       ← script de dados para o MVP
+    ├── model/
+    │   ├── treinar_modelo.py               ← treinamento do Prophet
+    │   └── endpoint_previsao.py            ← endpoint REST (Flask)
+    └── apex/
+        └── sp_exportar_serie_temporal.sql  ← stored procedure Oracle
 ```
 
 ---
@@ -236,36 +237,36 @@ python gerar_dados_sinteticos.py
 
 ### 2. Treinar o modelo
 ```bash
-cd src/model
-python treinar_modelo.py
+cd ../model
+python treinar_modelo.py --dados ../data/dados_sinteticos.csv
 ```
 
 ### 3. Subir o endpoint REST localmente
 ```bash
 python endpoint_previsao.py
-# Disponível em: http://localhost:5000/prever
+# Disponível em: http://localhost:5000
 ```
 
 ### 4. Testar o endpoint
 ```bash
-curl -X POST http://localhost:5000/prever \
-  -H "Content-Type: application/json" \
-  -d '{"especialidade": "Cardiologia", "unidade_id": 1, "dias": 30}'
+# Em um novo terminal, na raiz do projeto
+cd ../..
+python teste.py
 ```
 
 ---
 
 ## 🎬 Vídeo Pitch
 
-> 📺 **[Assistir no YouTube](https://youtube.com/SUA_URL_AQUI)** *(não listado)*
+> 📺 **[Assistir no YouTube](https://youtu.be/_szHqj4EQQE)** *(não listado)*
 
 **Duração:** ~5 minutos  
 **Conteúdo:**
 1. Problema: gestão reativa de demanda hospitalar
 2. Solução: modelo de previsão de séries temporais
 3. Justificativa técnica do modelo escolhido
-4. Demonstração simulada do painel APEX
-5. Resultados esperados e próximos passos
+4. Demonstração funcional do modelo rodando localmente
+5. Resultados alcançados e próximos passos
 
 ---
 
@@ -277,6 +278,8 @@ curl -X POST http://localhost:5000/prever \
 - ✅ Estratégia de dados definida (origem, formato, volume, fluxo)
 - ✅ Diagrama de arquitetura de três camadas elaborado
 - ✅ Script de dados sintéticos para validação do pipeline no MVP
+- ✅ Modelo Prophet treinado e funcionando localmente
+- ✅ Endpoint REST operacional com previsão de demanda por especialidade
 - ✅ Documento de arquitetura completo
 
 ---
@@ -288,8 +291,6 @@ curl -X POST http://localhost:5000/prever \
 | Sprint 3 — IA (este repositório) | https://github.com/challengeoracle/sprint-3-ia |
 | Sprint 1 — .NET (painel admin) | https://github.com/challengeoracle/sprint-1-dotnet |
 | Sprint 1 — Mobile (app paciente) | https://github.com/challengeoracle/sprint-1-mobile |
-| Sprint 1 — Java (backend) | https://github.com/challengeoracle/sprint-1-java |
-
 ---
 
-*Desenvolvido para o Challenge FIAP em parceria com a Oracle · 2025*
+*Desenvolvido para o Challenge FIAP em parceria com a Oracle · 2026*

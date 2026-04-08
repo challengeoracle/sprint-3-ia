@@ -10,6 +10,3 @@ models/
 __pycache__/
 *.pyc
 .env
-
-# Scripts locais de teste
-teste.py
