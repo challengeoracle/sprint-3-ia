@@ -1,9 +1,10 @@
-# 🤖 Medix AI — Arquitetura de Inteligência Artificial
-### Sprint 3 · Disruptive Architectures: IoT, Big Data & AI · FIAP × Oracle
+# Medix AI - Integração APEX e Inteligência Artificial
+
+**Challenge FIAP x Oracle - Sprint 4 (Final)**
 
 ---
 
-## 👥 Integrantes
+## Integrantes
 
 | Nome | RM | Responsabilidade |
 |------|----|-----------------|
@@ -13,284 +14,121 @@
 
 ---
 
-## 🎯 Objetivo desta Sprint
+## O que é este projeto?
 
-Esta sprint foca no **planejamento estratégico e na arquitetura de integração** do componente de Inteligência Artificial da plataforma Medix dentro do ecossistema Oracle.
+Nesta última sprint, nosso foco foi tirar o modelo de IA do ambiente de testes e colocá-lo para rodar de forma integrada. O objetivo final é resolver um problema clássico da gestão hospitalar: a tomada de decisão reativa. 
 
-O objetivo não é codificar a IA neste momento, mas sim definir formalmente:
-- Qual problema real será resolvido com IA
-- Qual modelo foi escolhido e por quê
-- Como os dados fluem entre as camadas Oracle APEX → Oracle Database → Modelo de IA
+Construímos uma API que conecta o nosso motor preditivo em Python diretamente ao Oracle APEX. Dessa forma, o gestor do hospital consegue abrir o sistema e visualizar em um gráfico a previsão exata de demanda de pacientes para os próximos 7 dias, permitindo ajustar a escala de médicos e leitos antes do pico acontecer.
 
 ---
 
-## 🧠 Componente de IA — Previsão de Demanda
+## O Motor da IA
 
-### Problema
+Para fazer a previsão, utilizamos o **Prophet** (desenvolvido pela Meta). A escolha se deu por um motivo prático: dados de saúde têm sazonalidades muito fortes (o movimento despenca no domingo e explode na segunda-feira). O Prophet lida com esse padrão perfeitamente sem precisar do custo computacional de uma rede neural complexa.
 
-Os gestores hospitalares tomam decisões de escala de colaboradores, alocação de leitos e gestão de recursos de forma **reativa** — somente após o pico de demanda já ter ocorrido. Isso resulta em sobrecarga de equipes, ociosidade de recursos e piora na qualidade do atendimento.
-
-### Solução com IA
-
-Um modelo de **previsão de séries temporais** analisa o histórico de agendamentos por especialidade e unidade, e projeta a demanda para os próximos 30 dias — permitindo ao gestor ajustar escalas e recursos **antes** do pico acontecer.
-
-> Este objetivo está declarado explicitamente no escopo do projeto Medix: *"utilizar ferramentas de análise de dados para prever picos de demanda"*.
+**Sobre os dados:** Como não podemos usar dados reais de pacientes devido à LGPD, nós criamos um gerador de dados sintéticos direto no código (`app.py`). Toda vez que a API é chamada, ela usa o `numpy` para gerar um histórico realista de 90 dias de uma clínica (incluindo ruído e variação de fim de semana), treina o modelo na hora e cospe a projeção futura.
 
 ---
 
-## 📊 Modelo de IA Escolhido
+## Arquitetura de Integração
 
-| Atributo | Detalhe |
-|----------|---------|
-| **Tipo** | Time Series Forecasting |
-| **Modelo principal** | Prophet (Meta/Facebook) |
-| **Modelo alternativo** | Gradient Boosting — XGBoost / LightGBM |
-| **Ambiente** | OCI Data Science (Oracle Cloud Infrastructure) |
-| **Linguagem** | Python 3.x |
-| **Bibliotecas** | `prophet`, `scikit-learn`, `pandas`, `numpy` |
+O fluxo de dados para fazer o Python conversar com o Oracle APEX na nuvem funciona da seguinte forma:
 
-### Por que Prophet e não outros modelos?
-
-| Modelo | Por que não? |
-|--------|-------------|
-| **CNN** | Projetada para dados com estrutura espacial (imagens, sinais 2D). Dados de agendamento são uma sequência 1D de contagens — CNN não agrega valor. |
-| **NLP puro** | Ideal para texto livre. O problema de previsão de demanda é quantitativo, não linguístico. |
-| **LSTM / RNN** | Viável, mas exige volume maior de dados e custo computacional mais alto para um ganho marginal neste caso. |
-| **Prophet ✅** | Captura múltiplas sazonalidades sobrepostas (semanal + mensal + anual), lida bem com feriados e dados faltantes, e gera componentes interpretáveis — o gestor entende *por que* o pico foi previsto. |
-
----
-
-## 🔄 Caso de Uso no Oracle APEX
-
-Fluxo completo quando o gestor aciona a funcionalidade:
-
-```
-1. Gestor acessa "Previsão de Demanda" no painel APEX
-2. Seleciona: unidade de saúde + especialidade + horizonte (7, 15 ou 30 dias)
-3. APEX dispara chamada via ORDS (Oracle REST Data Services)
-4. Oracle DB executa SP_EXPORTAR_SERIE_TEMPORAL
-   → agrupa histórico de agendamentos por data e especialidade
-   → serializa como JSON
-5. ORDS encaminha JSON ao endpoint REST no OCI Data Science
-6. Modelo processa a série temporal e retorna previsão + intervalos de confiança
-7. APEX renderiza gráfico de linha com:
-   ├── Histórico real (linha sólida)
-   ├── Previsão central (linha tracejada)
-   └── Banda de confiança (área sombreada)
-8. Se previsão > limiar de capacidade configurado → alerta vermelho automático
-```
-
----
-
-## 🏗️ Arquitetura de Integração
-
-```
+```text
 ┌─────────────────────────────────────────────────────┐
-│                   CAMADA 1                          │
-│                 Oracle APEX                         │
+│                 FRONT-END (Oracle APEX)             │
 │                                                     │
-│  Painel do Gestor                                   │
-│  ┌─────────────────────────────────────────────┐    │
-│  │ Formulário: unidade + especialidade + dias  │    │
-│  │ Gráfico: histórico + previsão + alertas     │    │
-│  └─────────────────────────────────────────────┘    │
+│ - Dashboard do Gestor Hospitalar                    │
+│ - Módulo de Gráfico (Line Chart) consumindo REST    │
 └──────────────────────┬──────────────────────────────┘
                        │
-            ORDS — HTTP/JSON Request
+             HTTP GET via REST Data Source
                        │
 ┌──────────────────────▼──────────────────────────────┐
-│                   CAMADA 2                          │
-│                Oracle Database                      │
+│                 GATEWAY (Ngrok)                     │
 │                                                     │
-│  TB_AGENDAMENTO  ──►  VW_DEMANDA_HISTORICA          │
-│  TB_UNIDADE                 │                       │
-│  TB_CAPACIDADE_UNIDADE      ▼                       │
-│                   SP_EXPORTAR_SERIE_TEMPORAL        │
-│                   (serializa JSON via UTL_HTTP)     │
+│ - Cria um túnel seguro expondo o localhost          │
 └──────────────────────┬──────────────────────────────┘
                        │
-            REST API — JSON payload
-            { "ds": "2025-01-15", "y": 23, ... }
-                       │
 ┌──────────────────────▼──────────────────────────────┐
-│                   CAMADA 3                          │
-│          Modelo de IA — OCI Data Science            │
+│                 BACK-END (Python/Flask)             │
 │                                                     │
-│  Input:  série temporal de agendamentos (90+ dias)  │
-│  Modelo: Prophet / Gradient Boosting                │
-│  Output: previsão 30 dias + intervalos confiança    │
-│                                                     │
-│  Endpoint REST gerenciado pelo OCI                  │
+│ - Recebe o request no /api/previsao                 │
+│ - Gera dados sintéticos e treina o Prophet          │
+│ - Devolve o JSON com as datas (ds) e previsão (yhat)│
 └─────────────────────────────────────────────────────┘
+
 ```
 
----
+A API retorna uma lista limpa no formato exato que o APEX precisa para desenhar o gráfico, já com os números arredondados (afinal, não existe "meio" paciente). Exemplo do payload:
 
-## 📦 Estratégia de Dados
-
-### Origem
-- **Fonte:** Oracle Database — tabela `TB_AGENDAMENTO` (entidade Consulta/Agendamento)
-- **Campos mínimos:** `id`, `data_agendamento` (DATE), `especialidade` (VARCHAR), `unidade_id` (FK), `status` (VARCHAR)
-
-### Formato de entrada do modelo
 ```json
 [
-  { "ds": "2025-01-01", "y": 18, "especialidade": "Cardiologia", "unidade_id": 1 },
-  { "ds": "2025-01-02", "y": 23, "especialidade": "Cardiologia", "unidade_id": 1 },
-  { "ds": "2025-01-03", "y": 9,  "especialidade": "Cardiologia", "unidade_id": 1 }
+  {
+    "ds": "2026-05-21",
+    "yhat": 204,
+    "yhat_lower": 194,
+    "yhat_upper": 213
+  },
+  {
+    "ds": "2026-05-22",
+    "yhat": 222,
+    "yhat_lower": 211,
+    "yhat_upper": 234
+  }
 ]
-```
 
-### Formato de saída do modelo
-```json
-{
-  "previsao": [
-    { "ds": "2025-04-07", "yhat": 27, "yhat_lower": 21, "yhat_upper": 33 },
-    { "ds": "2025-04-08", "yhat": 19, "yhat_lower": 14, "yhat_upper": 24 }
-  ],
-  "alerta": true,
-  "motivo": "Previsão de 27 atendimentos excede o limite configurado de 25 para Cardiologia."
-}
-```
-
-### Volume mínimo
-- **MVP:** 90 dias de histórico por especialidade por unidade (pode ser sintético)
-- **Produção:** 365+ dias para capturar sazonalidade anual completa
-
-### Estratégia para MVP (dados sintéticos)
-Para a demonstração desta sprint, será utilizado um script Python que gera dados históricos realistas com os padrões típicos de uma unidade de saúde:
-
-```python
-import pandas as pd
-import numpy as np
-
-def gerar_dados_sinteticos(dias=180, especialidade="Cardiologia", unidade_id=1):
-    datas = pd.date_range(start="2024-10-01", periods=dias, freq="D")
-    np.random.seed(42)
-
-    base = 20
-    sazonalidade_semana = np.where(datas.weekday < 5, 1.2, 0.4)
-    sazonalidade_mes = 1 + 0.15 * np.sin(2 * np.pi * datas.dayofyear / 365)
-    ruido = np.random.normal(0, 2, dias)
-
-    valores = np.array(base * sazonalidade_semana * sazonalidade_mes + ruido)
-    valores = valores.clip(min=0).round().astype(int)
-
-    return pd.DataFrame({
-        "data_agendamento": datas,
-        "y": valores,
-        "especialidade": especialidade,
-        "unidade_id": unidade_id,
-        "status": "Realizado"
-    })
 ```
 
 ---
 
-## 🛠️ Tecnologias Utilizadas
+## Como rodar o projeto localmente
 
-| Tecnologia | Versão | Papel |
-|------------|--------|-------|
-| Oracle APEX | 23.x | Interface do gestor — formulário e gráfico |
-| Oracle Database | 19c+ | Armazenamento e stored procedures |
-| Oracle REST Data Services (ORDS) | 23.x | Gateway REST entre camadas |
-| OCI Data Science | — | Hospedagem do modelo como endpoint REST |
-| Python | 3.10+ | Treinamento e inferência do modelo |
-| Prophet | 1.1.x | Modelo de séries temporais |
-| scikit-learn | 1.3.x | Pré-processamento e métricas |
-| pandas / numpy | — | Manipulação dos dados |
-| Flask | 3.x | Servidor REST local para o endpoint do modelo |
+Para testar a infraestrutura e ver a integração rodando na sua máquina, siga os passos abaixo.
 
----
+**Pré-requisitos:** Python 3.10+, uma conta no Ngrok e as dependências instaladas (`pip install flask flask-cors prophet pandas numpy`).
 
-## 📁 Estrutura do Repositório
+**1. Suba a API**
+Abra o terminal na pasta do projeto e inicie o servidor:
 
-```
-sprint-3-ia/
-├── README.md                               ← este arquivo
-├── teste.py                                ← teste rápido do endpoint
-├── docs/
-│   └── Medix_Arquitetura_IA_Sprint3.docx  ← documento completo de arquitetura
-└── src/
-    ├── data/
-    │   └── gerar_dados_sinteticos.py       ← script de dados para o MVP
-    ├── model/
-    │   ├── treinar_modelo.py               ← treinamento do Prophet
-    │   └── endpoint_previsao.py            ← endpoint REST (Flask)
-    └── apex/
-        └── sp_exportar_serie_temporal.sql  ← stored procedure Oracle
-```
-
----
-
-## ▶️ Como Executar (MVP Local)
-
-### Pré-requisitos
-- Python 3.10+
-- `pip install prophet scikit-learn pandas numpy flask`
-
-### 1. Gerar dados sintéticos
 ```bash
-cd src/data
-python gerar_dados_sinteticos.py
+python app.py
+
 ```
 
-### 2. Treinar o modelo
+A API vai ficar escutando na porta 5000.
+
+**2. Abra o túnel com o Ngrok**
+Em um segundo terminal, rode:
+
 ```bash
-cd ../model
-python treinar_modelo.py --dados ../data/dados_sinteticos.csv
+ngrok http 5000
+
 ```
 
-### 3. Subir o endpoint REST localmente
-```bash
-python endpoint_previsao.py
-# Disponível em: http://localhost:5000
-```
+Copie a URL HTTPS gerada (ex: `https://xxxx.ngrok-free.app`).
 
-### 4. Testar o endpoint
-```bash
-# Em um novo terminal, na raiz do projeto
-cd ../..
-python teste.py
-```
+**3. Configure o APEX**
+
+1. No seu aplicativo do Oracle APEX, vá em **Shared Components > REST Data Sources** e crie uma conexão usando a URL do Ngrok + a rota `/api/previsao`.
+2. Na página principal, crie um **Chart (Line)**.
+3. Aponte a origem dos dados (Source) para o REST criado.
+4. No mapeamento de colunas, coloque `ds` no Label (Eixo X) e `yhat` no Value (Eixo Y).
+5. Rode a página.
 
 ---
 
-## 🎬 Vídeo Pitch
+## Demonstração (Vídeo Pitch)
 
-> 📺 **[Assistir no YouTube](https://youtu.be/_szHqj4EQQE)** *(não listado)*
+O vídeo mostrando o código funcionando no terminal, a integração via Ngrok e o gráfico sendo renderizado ao vivo no Oracle APEX está disponível abaixo:
 
-**Duração:** ~5 minutos  
-**Conteúdo:**
-1. Problema: gestão reativa de demanda hospitalar
-2. Solução: modelo de previsão de séries temporais
-3. Justificativa técnica do modelo escolhido
-4. Demonstração funcional do modelo rodando localmente
-5. Resultados alcançados e próximos passos
+👉 **https://youtu.be/I6_daeBBrtE**
 
 ---
 
-## 📊 Resultados Alcançados nesta Sprint
+### Entregas da Sprint 4
 
-- ✅ Problema real identificado e documentado com base no escopo do projeto Medix
-- ✅ Modelo de IA selecionado (Prophet) com justificativa técnica comparativa
-- ✅ Caso de uso no Oracle APEX descrito em detalhes
-- ✅ Estratégia de dados definida (origem, formato, volume, fluxo)
-- ✅ Diagrama de arquitetura de três camadas elaborado
-- ✅ Script de dados sintéticos para validação do pipeline no MVP
-- ✅ Modelo Prophet treinado e funcionando localmente
-- ✅ Endpoint REST operacional com previsão de demanda por especialidade
-- ✅ Documento de arquitetura completo
-
----
-
-## 🔗 Links do Projeto
-
-| Repositório | Link |
-|-------------|------|
-| Sprint 3 — IA (este repositório) | https://github.com/challengeoracle/sprint-3-ia |
-| Sprint 1 — .NET (painel admin) | https://github.com/challengeoracle/sprint-1-dotnet |
-| Sprint 1 — Mobile (app paciente) | https://github.com/challengeoracle/sprint-1-mobile |
----
-
-*Desenvolvido para o Challenge FIAP em parceria com a Oracle · 2026*
+* API Flask construída e documentada.
+* Modelo Prophet gerando séries temporais dinâmicas.
+* Integração ponta a ponta finalizada com o Oracle APEX.
+* Dashboard renderizando dados da IA.
